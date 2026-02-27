@@ -22,9 +22,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // UI Elements
     const generateBtn = document.getElementById('generateBtn');
     const rawInput = document.getElementById('rawInput');
-    const outputArea = document.getElementById('outputArea');
-    const postOutput = document.getElementById('postOutput');
-    const copyBtn = document.getElementById('copyBtn');
+    const outputContainer = document.getElementById('outputContainer');
+    const hookOutput = document.getElementById('hookOutput');
+    const bodyOutput = document.getElementById('bodyOutput');
+    const modelSelect = document.getElementById('modelSelect');
+    const toneSelect = document.getElementById('toneSelect');
+    const statusArea = document.getElementById('statusArea');
+    const statusText = document.getElementById('statusText');
 
     // Settings Elements
     const settingsBtn = document.getElementById('settingsBtn');
@@ -69,6 +73,8 @@ document.addEventListener('DOMContentLoaded', () => {
     generateBtn.addEventListener('click', async () => {
         const text = rawInput.value.trim();
         const apiKey = localStorage.getItem('reddit_bot_api_key');
+        const selectedModel = modelSelect.value;
+        const selectedTone = toneSelect.value;
 
         if (!apiKey) {
             alert('Please configure your OpenRouter API Key in settings first!');
@@ -84,54 +90,80 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show loading state
         generateBtn.classList.add('loading');
         generateBtn.disabled = true;
-        outputArea.hidden = true;
+        outputContainer.hidden = true;
+        statusArea.hidden = false;
+        statusText.textContent = "Model: Connecting...";
 
         try {
-            const result = await generateViralPost(text, apiKey);
+            const result = await generateViralPost(text, apiKey, selectedModel, selectedTone);
 
             if (result) {
-                postOutput.textContent = result;
-                outputArea.hidden = false;
-                outputArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                const parsed = parseAIResponse(result);
+                hookOutput.textContent = parsed.hook;
+                bodyOutput.textContent = parsed.body;
+                outputContainer.hidden = false;
+                outputContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         } catch (error) {
             console.error('Generation failed:', error);
-            alert('Failed to generate post. Check console for details.');
+            alert('Failed to generate post: ' + error.message);
         } finally {
-            // Reset button
             generateBtn.classList.remove('loading');
             generateBtn.disabled = false;
+            statusArea.hidden = true;
         }
     });
 
-    copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(postOutput.textContent).then(() => {
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = 'Copied!';
-            copyBtn.style.background = 'var(--accent-color)';
+    // Universal Copy Logic
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-target');
+            const targetEl = document.getElementById(targetId);
+            const textToCopy = targetEl.textContent;
 
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-                copyBtn.style.background = 'rgba(255, 255, 255, 0.1)';
-            }, 2000);
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.background = '#28a745';
+
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = 'var(--accent-color)';
+                }, 2000);
+            });
         });
     });
 
     /**
-     * Attempts to generate a viral Reddit post using a list of models as fallbacks.
+     * Parses the AI response to separate Hook and Body
      */
-    async function generateViralPost(input, apiKey) {
+    function parseAIResponse(rawText) {
+        const hookMatch = rawText.match(/HOOK:([\s\S]*?)(?=BODY:|$)/i);
+        const bodyMatch = rawText.match(/BODY:([\s\S]*)/i);
+
+        return {
+            hook: hookMatch ? hookMatch[1].trim() : "Untitled Post",
+            body: bodyMatch ? bodyMatch[1].trim() : rawText.trim()
+        };
+    }
+
+    /**
+     * Attempts to generate a viral Reddit post
+     */
+    async function generateViralPost(input, apiKey, preferredModel, tone) {
+        let modelsToTry = preferredModel === 'auto' ? MODELS : [preferredModel, ...MODELS.filter(m => m !== preferredModel)];
         let lastError = null;
 
-        for (const model of MODELS) {
-            console.log(`Attempting generation with model: ${model}`);
+        for (const model of modelsToTry) {
+            statusText.textContent = `Model: ${model.split('/')[1].split(':')[0]}...`;
+
             try {
                 const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${apiKey}`,
                         "HTTP-Referer": window.location.href,
-                        "X-Title": "Reddit Bot",
+                        "X-Title": "Reddit Bot Pro",
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
@@ -139,11 +171,33 @@ document.addEventListener('DOMContentLoaded', () => {
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "You are a master of Reddit marketing and viral content creation. Your goal is to transform messy, raw ideas into high-engagement, 'ready-to-post' Reddit content. \n\nFocus on:\n1. A catchy, scroll-stopping TITLE.\n2. A well-formatted BODY (use bolding, bullet points, and TL;DRs where appropriate).\n3. Authentic tone suited for subreddits like r/Entrepreneur, r/SaaS, or r/Advice.\n4. No AI-sounding fluff. Keep it raw, direct, and valuable.\n\nOutput format:\nTITLE: [The Title]\n\n[The Body]"
+                                "content": `You are a Reddit Viral Growth Engineer. Your task is to transform raw ideas into top-tier Reddit posts.
+
+CONSTRAINTS:
+1. OUTPUT FORMAT: You must ONLY output exactly in this format:
+HOOK: [The Hook/Title]
+BODY: [The Body Content]
+
+2. HOOK (TITLE) RULES:
+- Must be between 62 and 78 characters.
+- Must be scroll-stopping and high-impact.
+- No clickbait, but extreme curiosity gap.
+
+3. BODY RULES:
+- Tone: ${tone}.
+- Use authentic Reddit formatting (bullet points, bolding).
+- Start with a strong hook sentence.
+- Ends with a call to action or a discussion starter.
+- NO AI fluff like "In today's fast-paced world" or "I hope this helps". Keep it raw and honest.
+
+4. OVERALL QUALITY:
+- If the tone is 'story-driven', focus on personal experience.
+- If 'upfront', be direct and value-heavy.
+- If 'honest', be vulnerable and transparent.`
                             },
                             {
                                 "role": "user",
-                                "content": `Turn this raw idea into a viral Reddit post: ${input}`
+                                "content": `Raw Input: ${input}\nTone: ${tone}`
                             }
                         ]
                     })
@@ -151,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!response.ok) {
                     const errorDetails = await response.text();
-                    throw new Error(`Model ${model} failed: ${response.status} ${errorDetails}`);
+                    throw new Error(`Model ${model} failed: ${response.status}`);
                 }
 
                 const data = await response.json();
@@ -164,7 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 console.warn(`Error with model ${model}:`, err);
                 lastError = err;
-                continue; // Try next model
+                if (preferredModel !== 'auto') break; // Don't fallback if user pick failed? (Or maybe we should?)
+                continue;
             }
         }
 

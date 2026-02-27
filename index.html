@@ -49,10 +49,38 @@
         </div>
 
         <section class="generator-card">
+            <div class="selection-row">
+                <div class="input-group">
+                    <label for="modelSelect">Model</label>
+                    <select id="modelSelect">
+                        <option value="auto">Auto (Best Available)</option>
+                        <option value="qwen/qwen3-next-80b-a3b-instruct:free">Qwen 3 Next</option>
+                        <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small</option>
+                        <option value="google/gemma-3n-e2b-it:free">Gemma 3</option>
+                        <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="toneSelect">Tone</label>
+                    <select id="toneSelect">
+                        <option value="story-driven">Story-driven</option>
+                        <option value="upfront">Upfront & Direct</option>
+                        <option value="honest">Honest & Raw</option>
+                        <option value="professional">Professional Value</option>
+                        <option value="aggressive">Aggressive & Viral</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="input-group">
                 <label for="rawInput">Your Raw Idea</label>
                 <textarea id="rawInput"
                     placeholder="Paste your raw thoughts, a messy draft, or just a few bullet points here..."></textarea>
+            </div>
+
+            <div class="status-bar" id="statusArea" hidden>
+                <span class="status-indicator"></span>
+                <span id="statusText">Model: Initializing...</span>
             </div>
 
             <div class="actions">
@@ -62,12 +90,22 @@
                 </button>
             </div>
 
-            <div id="outputArea" class="output-area" hidden>
-                <div class="output-header">
-                    <span>Generated Post</span>
-                    <button id="copyBtn" class="secondary-btn">Copy</button>
+            <div id="outputContainer" class="output-container" hidden>
+                <div class="output-section">
+                    <div class="output-header">
+                        <span>Hook (Title)</span>
+                        <button class="copy-btn" data-target="hookOutput">Copy Hook</button>
+                    </div>
+                    <div id="hookOutput" class="output-box hook-text"></div>
                 </div>
-                <div id="postOutput" class="post-content"></div>
+
+                <div class="output-section">
+                    <div class="output-header">
+                        <span>Post Body</span>
+                        <button class="copy-btn" data-target="bodyOutput">Copy Body</button>
+                    </div>
+                    <div id="bodyOutput" class="output-box body-text"></div>
+                </div>
             </div>
         </section>
 
