@@ -12,25 +12,47 @@ const MODELS = [
     "meta-llama/llama-3.2-3b-instruct:free",
     "openai/gpt-oss-120b:free",
     "openai/gpt-oss-20b:free",
-    "z-ai/glm-4.5-air:free",
-    "stepfun/step-3.5-flash:free",
-    "liquid/lfm-2.5-1.2b-thinking:free",
-    "nvidia/nemotron-nano-9b-v2:free"
+    "openai/gpt-oss-120b:free"
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
-    // UI Elements
-    const generateBtn = document.getElementById('generateBtn');
+    // Tab Switching Logic
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-tab');
+
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            document.getElementById(target).classList.add('active');
+        });
+    });
+
+    // Post Mode Elements
+    const generatePostBtn = document.querySelector('#post-mode .generateBtn');
     const rawInput = document.getElementById('rawInput');
-    const outputContainer = document.getElementById('outputContainer');
+    const postOutputContainer = document.querySelector('#post-mode .output-container');
     const hookOutput = document.getElementById('hookOutput');
     const bodyOutput = document.getElementById('bodyOutput');
-    const modelSelect = document.getElementById('modelSelect');
     const toneSelect = document.getElementById('toneSelect');
-    const statusArea = document.getElementById('statusArea');
-    const statusText = document.getElementById('statusText');
+    const postStatusArea = document.querySelector('#post-mode .statusArea');
+    const postStatusText = document.querySelector('#post-mode .statusText');
 
-    // Settings Elements
+    // Reply Mode Elements
+    const generateReplyBtn = document.getElementById('generateReplyBtn');
+    const commentInput = document.getElementById('commentInput');
+    const customInstructions = document.getElementById('customInstructions');
+    const replyOutputArea = document.getElementById('replyOutputArea');
+    const replyOutput = document.getElementById('replyOutput');
+    const replyStatusArea = document.querySelector('#reply-mode .statusArea');
+    const replyStatusText = document.querySelector('#reply-mode .statusText');
+
+    // Shared Elements
+    const modelSelects = document.querySelectorAll('.model-select');
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsModal = document.getElementById('settingsModal');
     const closeSettings = document.getElementById('closeSettings');
@@ -39,24 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load saved API key
     const savedKey = localStorage.getItem('reddit_bot_api_key');
-    if (savedKey) {
-        apiKeyInput.value = savedKey;
-    }
+    if (savedKey) apiKeyInput.value = savedKey;
 
     // Modal Control
-    settingsBtn.addEventListener('click', () => {
-        settingsModal.hidden = false;
-    });
-
-    closeSettings.addEventListener('click', () => {
-        settingsModal.hidden = true;
-    });
-
-    window.addEventListener('click', (e) => {
-        if (e.target === settingsModal) {
-            settingsModal.hidden = true;
-        }
-    });
+    settingsBtn.addEventListener('click', () => settingsModal.hidden = false);
+    closeSettings.addEventListener('click', () => settingsModal.hidden = true);
+    window.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.hidden = true; });
 
     saveSettings.addEventListener('click', () => {
         const key = apiKeyInput.value.trim();
@@ -69,50 +79,88 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Generation Logic
-    generateBtn.addEventListener('click', async () => {
+    // POST GENERATION
+    generatePostBtn.addEventListener('click', async () => {
         const text = rawInput.value.trim();
         const apiKey = localStorage.getItem('reddit_bot_api_key');
-        const selectedModel = modelSelect.value;
+        const selectedModel = document.querySelector('#post-mode .model-select').value;
         const selectedTone = toneSelect.value;
 
-        if (!apiKey) {
-            alert('Please configure your OpenRouter API Key in settings first!');
-            settingsModal.hidden = false;
-            return;
-        }
+        if (!validateRequest(text, apiKey)) return;
 
-        if (!text) {
-            alert('Please enter your idea first!');
-            return;
-        }
-
-        // Show loading state
-        generateBtn.classList.add('loading');
-        generateBtn.disabled = true;
-        outputContainer.hidden = true;
-        statusArea.hidden = false;
-        statusText.textContent = "Model: Connecting...";
+        showLoading(generatePostBtn, postOutputContainer, postStatusArea, postStatusText);
 
         try {
-            const result = await generateViralPost(text, apiKey, selectedModel, selectedTone);
-
+            const result = await callOpenRouter(text, apiKey, selectedModel, getPostSystemPrompt(selectedTone), postStatusText);
             if (result) {
                 const parsed = parseAIResponse(result);
                 hookOutput.textContent = parsed.hook;
                 bodyOutput.textContent = parsed.body;
-                outputContainer.hidden = false;
-                outputContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                postOutputContainer.hidden = false;
+                postOutputContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         } catch (error) {
-            console.error('Generation failed:', error);
-            alert('Failed to generate post: ' + error.message);
+            alert('Generation failed: ' + error.message);
         } finally {
-            generateBtn.classList.remove('loading');
-            generateBtn.disabled = false;
-            statusArea.hidden = true;
+            hideLoading(generatePostBtn, postStatusArea);
         }
     });
+
+    // REPLY GENERATION
+    generateReplyBtn.addEventListener('click', async () => {
+        const text = commentInput.value.trim();
+        const instructions = customInstructions.value.trim();
+        const apiKey = localStorage.getItem('reddit_bot_api_key');
+        // Reply mode doesn't have its own model select yet in HTML, we could use the global or add one. 
+        // For now let's use the one from post-mode or just default to auto.
+        const selectedModel = "auto";
+
+        if (!validateRequest(text, apiKey)) return;
+
+        showLoading(generateReplyBtn, replyOutputArea, replyStatusArea, replyStatusText);
+
+        try {
+            const systemPrompt = getReplySystemPrompt(instructions);
+            const result = await callOpenRouter(`Comment to address: "${text}"`, apiKey, selectedModel, systemPrompt, replyStatusText);
+            if (result) {
+                replyOutput.textContent = result.trim();
+                replyOutputArea.hidden = false;
+                replyOutputArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        } catch (error) {
+            alert('Reply failed: ' + error.message);
+        } finally {
+            hideLoading(generateReplyBtn, replyStatusArea);
+        }
+    });
+
+    // Logic Helpers
+    function validateRequest(text, apiKey) {
+        if (!apiKey) {
+            alert('Please configure your OpenRouter API Key in settings first!');
+            settingsModal.hidden = false;
+            return false;
+        }
+        if (!text) {
+            alert('Please enter some text first!');
+            return false;
+        }
+        return true;
+    }
+
+    function showLoading(btn, container, statusArea, statusText) {
+        btn.classList.add('loading');
+        btn.disabled = true;
+        container.hidden = true;
+        statusArea.hidden = false;
+        statusText.textContent = "Model: Connecting...";
+    }
+
+    function hideLoading(btn, statusArea) {
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        statusArea.hidden = true;
+    }
 
     // Universal Copy Logic
     document.querySelectorAll('.copy-btn').forEach(btn => {
@@ -140,72 +188,71 @@ document.addEventListener('DOMContentLoaded', () => {
     function parseAIResponse(rawText) {
         const hookMatch = rawText.match(/HOOK:([\s\S]*?)(?=BODY:|$)/i);
         const bodyMatch = rawText.match(/BODY:([\s\S]*)/i);
-
         return {
             hook: hookMatch ? hookMatch[1].trim() : "Untitled Post",
             body: bodyMatch ? bodyMatch[1].trim() : rawText.trim()
         };
     }
 
+    function getPostSystemPrompt(tone) {
+        return `You are a Reddit Viral Growth Engineer. transform raw ideas into top-tier Reddit posts.
+CONSTRAINTS:
+1. OUTPUT FORMAT: ONLY output in this format:
+HOOK: [The Hook/Title]
+BODY: [The Body Content]
+2. HOOK (TITLE): 62-78 chars. Scroll-stopping.
+3. BODY: Tone: ${tone}. Authentic Reddit formatting. NO AI fluff.
+4. QUALITY: Story-driven means personal; upfront means direct; honest means transparent.`;
+    }
+
+    function getReplySystemPrompt(instructions) {
+        let prompt = `You are a Reddit user replying to a comment.
+Your goal is to sound like a real person—conversational, informal, and high-value.
+
+CRITICAL CONSTRAINTS:
+1. NO EM-DASHES (—). Do not use them ever.
+2. NO HYPHENS for bullet points or lists. Use normal sentences.
+3. NO GENERIC STARTERS like "I totally agree" or "That's a great point".
+4. Be direct and concise.
+
+${instructions ? `CUSTOM INSTRUCTIONS TO FOLLOW: ${instructions}` : "Simply think how a high-karma human user would reply to add value or continue the conversation."}`;
+        return prompt;
+    }
+
     /**
-     * Attempts to generate a viral Reddit post
+     * Attempts to generate a viral Reddit post or reply using OpenRouter
      */
-    async function generateViralPost(input, apiKey, preferredModel, tone) {
+    async function callOpenRouter(input, apiKey, preferredModel, systemPrompt, statusTextElement) {
         let modelsToTry = preferredModel === 'auto' ? MODELS : [preferredModel, ...MODELS.filter(m => m !== preferredModel)];
         let lastError = null;
 
         for (const model of modelsToTry) {
-            statusText.textContent = `Model: ${model.split('/')[1].split(':')[0]}...`;
+            if (statusTextElement) {
+                statusTextElement.textContent = `Model: ${model.split('/')[1].split(':')[0]}...`;
+            } else {
+                console.log(`Trying ${model}...`);
+            }
 
             try {
                 const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${apiKey}`,
-                        "HTTP-Referer": window.location.href,
                         "X-Title": "Reddit Bot Pro",
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
                         "model": model,
                         "messages": [
-                            {
-                                "role": "system",
-                                "content": `You are a Reddit Viral Growth Engineer. Your task is to transform raw ideas into top-tier Reddit posts.
-
-CONSTRAINTS:
-1. OUTPUT FORMAT: You must ONLY output exactly in this format:
-HOOK: [The Hook/Title]
-BODY: [The Body Content]
-
-2. HOOK (TITLE) RULES:
-- Must be between 62 and 78 characters.
-- Must be scroll-stopping and high-impact.
-- No clickbait, but extreme curiosity gap.
-
-3. BODY RULES:
-- Tone: ${tone}.
-- Use authentic Reddit formatting (bullet points, bolding).
-- Start with a strong hook sentence.
-- Ends with a call to action or a discussion starter.
-- NO AI fluff like "In today's fast-paced world" or "I hope this helps". Keep it raw and honest.
-
-4. OVERALL QUALITY:
-- If the tone is 'story-driven', focus on personal experience.
-- If 'upfront', be direct and value-heavy.
-- If 'honest', be vulnerable and transparent.`
-                            },
-                            {
-                                "role": "user",
-                                "content": `Raw Input: ${input}\nTone: ${tone}`
-                            }
+                            { "role": "system", "content": systemPrompt },
+                            { "role": "user", "content": input }
                         ]
                     })
                 });
 
                 if (!response.ok) {
                     const errorDetails = await response.text();
-                    throw new Error(`Model ${model} failed: ${response.status}`);
+                    throw new Error(`Model ${model} failed: ${response.status} - ${errorDetails}`);
                 }
 
                 const data = await response.json();
@@ -214,15 +261,13 @@ BODY: [The Body Content]
                 } else {
                     throw new Error(`Model ${model} returned empty response.`);
                 }
-
             } catch (err) {
                 console.warn(`Error with model ${model}:`, err);
                 lastError = err;
-                if (preferredModel !== 'auto') break; // Don't fallback if user pick failed? (Or maybe we should?)
+                if (preferredModel !== 'auto') break;
                 continue;
             }
         }
-
         throw new Error(`All models failed. Last error: ${lastError?.message}`);
     }
 });
