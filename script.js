@@ -12,7 +12,10 @@ const MODELS = [
     "meta-llama/llama-3.2-3b-instruct:free",
     "openai/gpt-oss-120b:free",
     "openai/gpt-oss-20b:free",
-    "openai/gpt-oss-120b:free"
+    "z-ai/glm-4.5-air:free",
+    "stepfun/step-3.5-flash:free",
+    "liquid/lfm-2.5-1.2b-thinking:free",
+    "nvidia/nemotron-nano-9b-v2:free"
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -52,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const replyStatusText = document.querySelector('#reply-mode .statusText');
 
     // Shared Elements
-    const modelSelects = document.querySelectorAll('.model-select');
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsModal = document.getElementById('settingsModal');
     const closeSettings = document.getElementById('closeSettings');
@@ -111,9 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = commentInput.value.trim();
         const instructions = customInstructions.value.trim();
         const apiKey = localStorage.getItem('reddit_bot_api_key');
-        // Reply mode doesn't have its own model select yet in HTML, we could use the global or add one. 
-        // For now let's use the one from post-mode or just default to auto.
-        const selectedModel = "auto";
+        const selectedModel = document.getElementById('replyModelSelect').value;
 
         if (!validateRequest(text, apiKey)) return;
 
